@@ -1,5 +1,5 @@
-from src.seed_db import init_db
-init_db()
+from seed_db import seed
+seed()
 
 import os
 import json
