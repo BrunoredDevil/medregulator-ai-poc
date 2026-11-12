@@ -55,3 +55,6 @@ def get_audit_logs():
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return rows
+@app.get("/")
+def health_check():
+    return {"status": "online", "service": "MedRegulator AI QMSR API", "docs": "/docs"}
