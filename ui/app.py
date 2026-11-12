@@ -1,92 +1,283 @@
-def build_md(cid, lot, rev, res):
-    d=res["draft_capa"]
-    return chr(10).join([f"# QMSR CAPA Report ({cid})", f"Lot: {lot} | QA Reviewer: {rev}", "## 5-Why Analysis", *d["five_why_analysis"], "## ISO Citations", *d["iso_citations"], "## Action Plan", d["containment_and_action_plan"]])
-
 import os
+from datetime import datetime, timezone
 import requests
 import streamlit as st
 
-API_URL = os.getenv("API_URL", "http://localhost:8000")
+ARI_URL = st.secrets.get("API_URL", os.getenv("API_URL", "https://medregulator-ai-poc.onrender.com")).rstrip("/")
 
-st.set_page_config(page_title="MedRegulator AI | QMSR CAPA Triage", layout="wide")
-st.title("MedRegulator AI — FDA QMSR & ISO 13485 CAPA Triage")
-st.caption("Automated Device History Record (DHR) Traceability, 5-Why Synthesis & 21 CFR Part 11 Audit Logging")
+st.set_page_config(
+    page_title="MedRegulator AI | QMSR CAPA Triage",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-tab1, tab2 = st.tabs(["1. Incident Triage & QA Sign-Off", "2. Immutable Audit Trail"])
+# --- Custom Enterprise QMSR Styling ---
+st.markdown(
+    """
+    <style>
+    .block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
+    .hero-banner {
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #0f766e 100%);
+        color: #f8fafc; padding: 1.4rem 1.8rem; border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.12); margin-bottom: 1.2rem;
+    }
+    .hero-banner h2 { margin: 0; font-size: 1.65rem; font-weight: 700; color: #ffffff; }
+    .hero-banner p { margin: 0.35rem 0 0 0; color: #cbd5e1; font-size: 0.95rem; }
+    .pill-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem; }
+    .pill {
+        background: rgba(255,255,255,0.12); color: #e2e8f0;
+        padding: 0.2rem 0.65rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600;
+    }
+    .why-card {
+        background: #f8fafc; border-left: 4px solid #0f766e;
+        padding: 0.65rem 0.9rem; margin-bottom: 0.5rem; border-radius: 6px;
+        color: #0f172a; font-size: 0.92rem;
+    }
+    .hash-box {}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+SCENARIOS = {
+    "Sterile Barrier Peel (LOT-2026-8841)": {
+        "complaint_id": "CMP-2026-0412",
+        "lot_number": "LOT-2026-8841",
+        "source_channel": "Hospital Post-Market Surveillance",
+        "description": "During pre-operative setup, the Tyvek pouch seal on the cardiac catheter delivery system peeled open with incomplete fusion along the distal edge, compromising sterile barrier integrity prior to patient contact.",
+    },
+    "Sensor Drift - Telemetry Out of Spec (LOT-2026-9104)": {
+        "complaint_id": "CMP-2026-0519",
+        "lot_number": "LOT-2026-9104",
+        "source_channel": "Field Service & Calibration Log",
+        "description": "Intraoperative pressure transducer exhibited a +12 mmHg zero-point drift after 20 minutes of continuous operation, triggering repeated audible alarms during catheterization.",
+    },
+    "Custom Complaint / Deviation": {
+        "complaint_id": "CMP-2026-0900",
+        "lot_number": "LOT-2026-8841",
+        "source_channel": "Clinical Feedback Portal",
+        "description": "",
+    },
+}
+
+def build_md(cid: str, lot: str, rev: str, inc: dict, res: dict, sig: dict | None) -> str:
+    d = res["draft_capa"]
+    dhr = res.get("dhr_context") or {}
+    dhr_lines = [f"| {k} | {v} |" for k, v in dhr.items()] if dhr else ["| Status | No matching DHR record found |"]
+    sig_block = [
+        f"- **QA Reviewer:** `{rev}`",
+        f"- **Disposition:** `{self_dec := sig.get('decision') if sig else 'PENDING_QAREVIEW'}`",
+        f"- **Timestamp (UTC):** `{sig.get('timestamp', 'NA/PDENDING') if sig else 'Pending Sign-Off'}`",
+        f"- **SHA-256 Hash:** `{sig.get('sha256_hash', 'Unsigned Draft') if sig else 'Unsigned Draft'}`",
+    ]
+    return "\n".join([
+        f"# FDA QMSR / ISO 13485:2016 CAPA Investigation Report ({(cid)})",
+        f"**Lot Number:** `{lot}` | **Source:** {inc.get('source_channel', '')} | **Classification:** `{d.get('action_classification', '')}`",
+        f"**FDA MDR Reportable (21 CFR 803):** `{d.get('mdr_reportable_flag', '')}` | **Confidence:** `{d.get('confidence_score', '')}`",
+        "",
+        "## 1. Event Description",
+        inc.get("description", ""),
+        "",
+        "## 2. Device History Record (DHR) Traceability",
+        "| Field | Value |",
+        "|---|---|",
+        *dhr_lines,
+        "",
+        "## 3. 5-Why Root Cause Analysis",
+        *[f"- "{step}" for step in d.get("five_why_analysis", [])],
+        "",
+        "## 4. Regulatory & ISO Citations",
+        *[f"- `{cite}`" for cite in d.get("iso_citations", [])],
+        "",
+        "## 5. Containment & CAPA Action Plan",
+        d.get("containment_and_action_plan", ""),
+        "",
+        "## 6. 21 CFR Part 11 Electronic Sign-Off & Audit Record",
+        *sig_block,
+    ])
+
+# --- Hero Banner ---
+st.markdown(
+    """
+    <div class="hero-banner">
+        <h2>MedAgentQMSR | CAPA & PMS Triage Command Center</h2>
+        <p>Automated Device History Record (DHR) Traceability, 5-Why Root Cause Synthesis &amp; 21 CFR Part 11 Electronic Sign-Off</p>
+        <div class="pill-row">
+            <span class="pill">FDA 21 CFR Part 820 (QMSR)</span>
+            <span class="pill">ISO 13485:2016 Clause 8.5</span>
+            <span class="pill">21 CFR Part 11 SHA-256 Audit</span>
+            <span class="pill">LangGraph Agentic Workflow</span>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+# --- Sidebar: System Status & QA Identity ---
+with st.sidebar:
+    st.subheader("QA Reviewer Session")
+    reviewer = st.text_input("Reviewer ID (21 CFR Part 11)", value="QA-LEAD-MIHIR")
+    scenario_name = st.selectbox("Load Sample Complaint Scenario", list(SCENARIOS.keys()))
+    st.divider()
+    st.subheader("Backend Connectivity")
+    try:
+        health_res = requests.get(f"{API_URL}/audit-logs", timeout=8)
+        if health_res.ok:
+            log_count = len(health_res.json())
+            st.success(f"API Online | {log_count} Audit Records")
+        else:
+            st.warning(f"API Responded {health_res.status_code}")
+    except Exception:
+        st.info("Backend is waking up (Render free tier cold start takes ~30s on first call).")
+    st.caption(f"Endpoint: `{API_URL}`")
+
+selected = SCENARIOS[scenario_name]
+
+tab1, tab2 = st.tabs(["1. CAPA Triage & QA Disposition", "2. Immutable Audit Trail (21 CFR Part 11)"])
 
 with tab1:
-    col1, col2 = st.columns([1, 1.3])
+    left, right = st.columns([1, 1.35], gap="large")
 
-    with col1:
-        st.subheader("Incoming Quality Event")
-        complaint_id = st.text_input("Complaint / Deviation ID", value="PMS-2026-0419")
-        lot_number = st.selectbox("Affected Device Lot Number", ["LOT-2026-8841", "LOT-2026-9012", "LOT-2026-9155", "LOT-INVALID-999"])
-        source_channel = st.selectbox("Trigger Source", ["Post-Market Complaint", "Line Inspection Failure", "Statistical Trend Alert"])
-        patient_harm = st.checkbox("Potential Patient Harm / Serious Injury Reported (MDR Flag)")
-        description = st.text_area(
-            "Event Description",
-            value="Hospital reported upstream occlusion alarm and reverse fluid backflow during infusion setup on CardioFlow unit.",
-            height=110,
-        )
+    with left:
+        st.subheader("Post-Market Complaint Intake")
+        with st.container(border=True):
+            c1, c2 = st.columns(2)
+            complaint_id = c1.text_input("Complaint / Deviation ID", value=selected["complaint_id"])
+            lot_number = c2.text_input("Affected Device Lot / UDI", value=selected["lot_number"])
+            source_channel = st.text_input("Source Channel", value=selected["source_channel"])
+            description = st.text_area(
+                "Clinical / Quality Event Description",
+                value=selected["description"],
+                height=150,
+                placeholder="Describe the device malfunction, packaging defect, or process deviation...",
+            )
+            run_btn = st.button("Run Agentic CAPA Triage", type="primary", use_container_width=True)
 
-        if st.button("Run Agentic Triage", type="primary"):
-            res = requests.post(
-                f"{API_URL}/triage",
-                json={
+        if run_btn:
+            if not description.strip():
+                st.warning("Please enter an event description before running triage.")
+            else:
+                payload = {
                     "complaint_id": complaint_id,
                     "lot_number": lot_number,
                     "source_channel": source_channel,
                     "description": description,
-                    "patient_harm_reported": patient_harm,
-                },
-            )
-            st.session_state["triage_result"] = res.json()
+                }
+                with st.spinner("Executing LangGraph Triage: DHR Lookup -> 5-Why Synthesis -> Compliance Guardrail..."):
+                    try:
+                        res = requests.post(f"{API_URL}/triage", json=payload, timeout=60)
+                        if res.ok:
+                            st.session_state["triage_result"] = res.json()
+                            st.session_state["triage_incident"] = payload
+                            st.session_state.pop("signoff_result", None)
+                        else:
+                            st.error(f"Triage Error ({res.status_code}): {res.text}")
+                    except Exception as exc:
+                        st.error(f"Connection Error: {exc}")
 
-    with col2:
-        st.subheader("AI-Drafted CAPA & Compliance Guardrails")
+    with right:
+        st.subheader("Regulatory Dossier & QA Sign-Off")
         result = st.session_state.get("triage_result")
-        if result:
-            if result["guardrail_passed"]:
-                st.success(f"Status: {result['status_label']} (Confidence: {result['draft_capa']['confidence_score']})")
-            else:
-                st.error(f"Status: {result['status_label']} (Confidence: {result['draft_capa']['confidence_score']})")
+        incident = st.session_state.get("triage_incident", {})
 
-            with st.expander("Retrieved DHR & UDI Traceability (via MCP)", expanded=True):
-                st.json(result["dhr_context"] or {"warning": "No DHR record matched"})
-
+        if not result:
+            st.info("Select a scenario or enter a complaint on the left, then click Run Agentic CAPA Triage to generate a dossier.")
+        else:
             draft = result["draft_capa"]
-            st.markdown(f"**Classification:** `{draft['action_classification']}` | **MDR Reportable:** `{draft['mdr_reportable_flag']}`")
-            st.markdown("**5-Why Root Cause Analysis:**")
-            for step in draft["five_why_analysis"]:
-                st.markdown(f"- {step}")
+            dhr = result.get("dhr_context") or {}
 
-            st.markdown("**ISO 13485 / QMSR Citations:**")
-            for cite in draft["iso_citations"]:
-                st.code(cite)
+            # KPI Metric Ribbon
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Action Classification", draft.get("action_classification", "NA/A%)
+            mdr_flag = draft.get("mdr_reportable_flag", False)
+            m2.metric("FDA MDR (21 CFR 803)", "REPORTABLE" if mdr_flag else "NON-REPORTABLE")
+            conf = draft.get("confidence_score", 0.0)
+            m3.metric("Traceability Confidence", f"{conf:.0%}" if isinstance(conf, (int, float)) else str(conf))
 
-            st.markdown(f"**Containment & Action Plan:** {draft['containment_and_action_plan']}")
+            if result.get("compliance_flags"):
+                for flag in result["compliance_flags"]:
+                    st.warning(f"Guardrail Alert: {flag}")
+
+            w_dhr, w_why, w_plan = st.tabs(["DHR Traceability", "5-Why Root Cause", "CAPA Action Plan"])
+
+            with w_dhr:
+                if dhr:
+                    st.table([{"DHR Field": k, "Value": str(v)} for k, v in dhr.items()])
+                else:
+                    st.warning("No matching DHR record found for this lot number.")
+
+            with w_why:
+                for item in draft.get("five_why_analysis", []):
+                    st.markdown(f"<div class='why-card'>{item}</div>", unsafe_allow_html=True)
+                st.markdown("**Regulatory Citations:** " + " , ".join(f"`{c}`" for c in draft.get("iso_citations", [])))
+
+            with w_plan:
+                st.info(draft.get("containment_and_action_plan", ""))
 
             st.divider()
-            reviewer = st.text_input("Electronic Signature (QA Engineer ID)", value="qa_lead_m.kene")
-            c_approve, c_reject = st.columns(2)
-            if c_approve.button("Approve & Sync to QMS", use_container_width=True):
+            st.markdown("### 21 CFR Part 11 Electronic Sign-Off")
+            c_app, c_rej = st.columns(2)
+
+            if c_app.button("Approve & Sync to QMS", type="primary", use_container_width=True):
                 sig = requests.post(
                     f"{API_URL}/signoff",
-                    json={"complaint_id": complaint_id, "reviewer_id": reviewer, "decision": "APPROVED_SYNC_QMS", "capa_payload": draft},
+                    json={
+                        "complaint_id": incident.get("complaint_id", complaint_id),
+                        "reviewer_id": reviewer,
+                        "decision": "APPROVED_SYNC_QMS",
+                        "capa_payload": draft,
+                    },
                 ).json()
-                st.toast(f"Signed & Hashed: {sig['sha256_hash'][:16]}...")
-            if c_reject.button("Reject for Manual Rework", use_container_width=True):
+                sig["timestamp"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+                sig["decision"] = "APPROVED_SYNC_QMS"
+                st.session_state["signoff_result"] = sig
+                st.toast(f"Signed & Hashed: { sig['sha256_hash'][:16] }...")
+
+            if c_rej.button("Reject for Manual Rework", use_container_width=True):
                 sig = requests.post(
                     f"{API_URL}/signoff",
-                    json={"complaint_id": complaint_id, "reviewer_id": reviewer, "decision": "REJECTED_MANUAL_REWORK", "capa_payload": draft},
+                    json={
+                        "complaint_id": incident.get("complaint_id", complaint_id),
+                        "reviewer_id": reviewer,
+                        "decision": "REJECTED_MANUAL_REWORK",
+                        "capa_payload": draft,
+                    },
                 ).json()
+                sig["timestamp"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+                sig["decision"] = "REJECTED_MANUAL_REWORK"
+                st.session_state["signoff_result"] = sig
                 st.toast("Logged rejection in audit trail.")
 
-            st.download_button("Download Signed CAPA Report (.md)", build_md(complaint_id, lot_number, reviewer, result), file_name=f"CAPA_{complaint_id}.md", mime="text/markdown", use_container_width=True)
+            sig_res = st.session_state.get("signoff_result")
+            if sig_res:
+                st.success(f"Electronic Sign-Off Verified | Decision: { sig_res['decision']y | UTC: {`if(sig_res.get('timestamp')))`}")
+                st.markdown(f"<div class='hash-box'>SHA-256 Audit Hash: {sig_res['sha256_hash']}</div>", unsafe_allow_html=True)
+
+            cid = incident.get("complaint_id", complaint_id)
+            lot = incident.get("lot_number", lot_number)
+            report_md = build_md(cid, lot, reviewer, incident, result, sig_res)
+            st.download_button(
+                "Download Signed SMSR CAPA Report (.md)",
+                report_md,
+                file_name=f"CAPA_{cid}_{lot}.md",
+                mime="text/markdown",
+                use_container_width=True,
+            )
 
 with tab2:
-    st.subheader("Immutable Quality System Audit Log")
-    if st.button("Refresh Logs"):
+    h1, h2 = st.columns([4, 1])
+    h1.subheader("21 CFR Part 11 Immutable Audit Trail")
+    if h2.button("Refresh Audit Logs", use_container_width=True):
         st.rerun()
-    logs = requests.get(f"{API_URL}/audit-logs").json()
-    st.dataframe(logs, use_container_width=True)
+    try:
+        logs_res = requests.get(f"{API_URL}/audit-logs", timeout=20)
+        if logs_res.ok:
+            data = logs_res.json()
+            if data:
+                st.dataframe(data, use_container_width=True, hide_index=True)
+            else:
+                st.info("No signed CAPA records logged yet. Complete a triage and electronic sign-off in Tab 1.")
+        else:
+            st.error(f"Audit Log Error ({logs_res.status_code}): {logs_res.text}")
+    except Exception as exc:
+        st.error(f"Could not reach backend audit logs: {exc}")
