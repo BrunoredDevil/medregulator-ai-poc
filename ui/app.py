@@ -100,7 +100,8 @@ with tab1:
                         else:
                             st.error(f"Triage Error ({res.status_code}): {res.text}")
                     except Exception as exc:
-                        st.error(f"Connection Error: {exc}")    with right:
+                        st.error(f"Connection Error: {exc}")
+    with right:
         st.subheader("Regulatory Dossier & QA Sign-Off")
         result = st.session_state.get("triage_result")
         incident = st.session_state.get("triage_incident", {})
