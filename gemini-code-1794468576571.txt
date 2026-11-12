@@ -1,0 +1,4 @@
+# Optional: Leave blank to run in deterministic offline/mock-LLM mode for zero-cost testing
+OPENAI_API_KEY=
+DB_PATH=medregulator.sqlite
+API_URL=http://localhost:8000

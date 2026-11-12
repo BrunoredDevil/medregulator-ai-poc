@@ -1,0 +1,14 @@
+medregulator-fde-poc/
+├── requirements.txt
+├── .env.example
+├── .gitignore
+├── seed_db.py
+├── src/
+│   ├── __init__.py          (leave this file completely empty)
+│   ├── schemas.py
+│   ├── mcp_dhr_server.py
+│   ├── agent_graph.py
+│   └── api.py
+├── ui/
+│   └── app.py
+└── README.md
