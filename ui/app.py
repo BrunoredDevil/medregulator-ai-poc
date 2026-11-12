@@ -3,7 +3,10 @@ from datetime import datetime, timezone
 import requests
 import streamlit as st
 
-API_URL = st.secrets.get("API_URL", os.getenv("API_URL", "https://medregulator-ai-poc.onrender.com")).rstrip("/")
+try:
+    API_URL = st.secrets["API_URL"].rstrip("/")
+except Exception:
+    API_URL = os.getenv("API_URL", "https://medregulator-ai-poc.onrender.com").rstrip("/")
 
 st.set_page_config(page_title="MedRegulator AI | QMSR CAPA Triage", layout="wide", initial_sidebar_state="expanded")
 
