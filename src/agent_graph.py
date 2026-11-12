@@ -124,13 +124,13 @@ def route_guardrail(state: TriageState) -> Literal["pass", "fail"]:
 builder = StateGraph(TriageState)
 builder.add_node("classify", classify_qmsr_trigger)
 builder.add_node("retrieve_dhr", retrieve_dhr_via_mcp_logic)
-builder.add_node("draft_capa", draft_capa_node)
+builder.add_node("synthesize_capa", draft_capa_node)
 builder.add_node("guardrail", verify_compliance_guardrail)
 
 builder.set_entry_point("classify")
 builder.add_edge("classify", "retrieve_dhr")
-builder.add_edge("retrieve_dhr", "draft_capa")
-builder.add_edge("draft_capa", "guardrail")
+builder.add_edge("retrieve_dhr", "synthesize_capa")
+builder.add_edge("synthesize_capa", "guardrail")
 builder.add_conditional_edges("guardrail", route_guardrail, {"pass": END, "fail": END})
 
 triage_graph = builder.compile()

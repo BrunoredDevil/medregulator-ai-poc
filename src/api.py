@@ -1,3 +1,6 @@
+from src.seed_db import init_db
+init_db()
+
 import os
 import json
 import hashlib

@@ -1,1 +1,0 @@
-python seed_db.py

@@ -1,3 +1,7 @@
+def build_md(cid, lot, rev, res):
+    d=res["draft_capa"]
+    return chr(10).join([f"# QMSR CAPA Report ({cid})", f"Lot: {lot} | QA Reviewer: {rev}", "## 5-Why Analysis", *d["five_why_analysis"], "## ISO Citations", *d["iso_citations"], "## Action Plan", d["containment_and_action_plan"]])
+
 import os
 import requests
 import streamlit as st
@@ -77,6 +81,8 @@ with tab1:
                     json={"complaint_id": complaint_id, "reviewer_id": reviewer, "decision": "REJECTED_MANUAL_REWORK", "capa_payload": draft},
                 ).json()
                 st.toast("Logged rejection in audit trail.")
+
+            st.download_button("Download Signed CAPA Report (.md)", build_md(complaint_id, lot_number, reviewer, result), file_name=f"CAPA_{complaint_id}.md", mime="text/markdown", use_container_width=True)
 
 with tab2:
     st.subheader("Immutable Quality System Audit Log")
