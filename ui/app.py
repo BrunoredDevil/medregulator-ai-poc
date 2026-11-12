@@ -84,7 +84,7 @@ def build_md(cid: str, lot: str, rev: str, inc: dict, res: dict, sig: dict | Non
         *dhr_lines,
         "",
         "## 3. 5-Why Root Cause Analysis",
-        *[f"- "{step}" for step in d.get("five_why_analysis", [])],
+        *[f"- {step}" for step in d.get("five_why_analysis", [])],
         "",
         "## 4. Regulatory & ISO Citations",
         *[f"- `{cite}`" for cite in d.get("iso_citations", [])],
